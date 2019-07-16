@@ -215,6 +215,49 @@ overflow:
 	       me->name);
 	return -ENOEXEC;
 }
+
+#ifdef CONFIG_LIVEPATCH
+void clear_relocate_add(Elf64_Shdr *sechdrs,
+		   const char *strtab,
+		   unsigned int symindex,
+		   unsigned int relsec,
+		   struct module *me)
+{
+	unsigned int i;
+	Elf64_Rela *rel = (void *)sechdrs[relsec].sh_addr;
+	void *loc;
+
+	DEBUGP("Clearing relocate section %u to %u\n",
+	       relsec, sechdrs[relsec].sh_info);
+	for (i = 0; i < sechdrs[relsec].sh_size / sizeof(*rel); i++) {
+		loc = (void *)sechdrs[sechdrs[relsec].sh_info].sh_addr
+			+ rel[i].r_offset;
+
+		switch (ELF64_R_TYPE(rel[i].r_info)) {
+		case R_X86_64_NONE:
+			break;
+		case R_X86_64_64:
+			*(u64 *)loc = 0;
+			break;
+		case R_X86_64_32:
+			*(u32 *)loc = 0;
+			break;
+		case R_X86_64_32S:
+			*(s32 *)loc = 0;
+			break;
+		case R_X86_64_PC32:
+		case R_X86_64_PLT32:
+			*(u32 *)loc = 0;
+			break;
+		case R_X86_64_PC64:
+			*(u64 *)loc = 0;
+			break;
+		default:
+			break;
+		}
+	}
+}
+#endif
 #endif
 
 int module_finalize(const Elf_Ehdr *hdr,
