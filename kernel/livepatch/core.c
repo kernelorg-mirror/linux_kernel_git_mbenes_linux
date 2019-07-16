@@ -43,11 +43,6 @@ LIST_HEAD(klp_patches);
 
 static struct kobject *klp_root_kobj;
 
-static bool klp_is_module(struct klp_object *obj)
-{
-	return obj->name;
-}
-
 /* sets obj->mod if object is not vmlinux and module is found */
 static void klp_find_object_module(struct klp_object *obj)
 {
@@ -712,6 +707,12 @@ void __weak arch_klp_init_object_loaded(struct klp_patch *patch,
 {
 }
 
+/* Arches may override this to finish any remaining arch-specific tasks */
+void __weak arch_klp_free_object_loaded(struct klp_patch *patch,
+					struct klp_object *obj)
+{
+}
+
 /* parts of the initialization that is done only when the object is loaded */
 static int klp_init_object_loaded(struct klp_patch *patch,
 				  struct klp_object *obj)
@@ -1099,6 +1100,12 @@ static void klp_cleanup_module_patches_limited(struct module *mod,
 			klp_unpatch_object(obj);
 
 			klp_post_unpatch_callback(obj);
+
+			mutex_lock(&text_mutex);
+			module_disable_ro(patch->mod);
+			arch_klp_free_object_loaded(patch, obj);
+			module_enable_ro(patch->mod, true);
+			mutex_unlock(&text_mutex);
 
 			klp_free_object_loaded(obj);
 			break;

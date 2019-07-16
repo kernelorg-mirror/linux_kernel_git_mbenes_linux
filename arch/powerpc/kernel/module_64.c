@@ -450,7 +450,7 @@ static unsigned long stub_for_addr(const Elf64_Shdr *sechdrs,
 }
 
 #ifdef CONFIG_MPROFILE_KERNEL
-static bool is_mprofile_mcount_callsite(const char *name, u32 *instruction)
+bool is_mprofile_mcount_callsite(const char *name, u32 *instruction)
 {
 	if (strcmp("_mcount", name))
 		return false;
@@ -485,11 +485,6 @@ static void squash_toc_save_inst(const char *name, unsigned long addr)
 }
 #else
 static void squash_toc_save_inst(const char *name, unsigned long addr) { }
-
-static bool is_mprofile_mcount_callsite(const char *name, u32 *instruction)
-{
-	return false;
-}
 #endif
 
 /* We expect a noop next: if it is, replace it with instruction to

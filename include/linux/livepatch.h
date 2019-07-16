@@ -202,6 +202,11 @@ static inline bool klp_have_reliable_stack(void)
 	       IS_ENABLED(CONFIG_HAVE_RELIABLE_STACKTRACE);
 }
 
+static inline bool klp_is_module(struct klp_object *obj)
+{
+	return obj->name;
+}
+
 typedef int (*klp_shadow_ctor_t)(void *obj,
 				 void *shadow_data,
 				 void *ctor_data);
