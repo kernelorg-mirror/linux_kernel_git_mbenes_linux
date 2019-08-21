@@ -251,7 +251,7 @@ static int klp_update_object_relocations(struct module *pmod,
 					 struct klp_object *obj,
 					 reloc_update_fn_t reloc_update_fn)
 {
-	int i, cnt, ret = 0;
+	int i, cnt, ret;
 	const char *objname, *secname;
 	char sec_objname[MODULE_NAME_LEN];
 	Elf_Shdr *sec;
@@ -277,8 +277,7 @@ static int klp_update_object_relocations(struct module *pmod,
 		if (cnt != 1) {
 			pr_err("section %s has an incorrectly formatted name\n",
 			       secname);
-			ret = -EINVAL;
-			break;
+			return -EINVAL;
 		}
 
 		if (strcmp(objname, sec_objname))
@@ -286,10 +285,10 @@ static int klp_update_object_relocations(struct module *pmod,
 
 		ret = reloc_update_fn(pmod, i);
 		if (ret)
-			break;
+			return ret;
 	}
 
-	return ret;
+	return 0;
 }
 
 /*
