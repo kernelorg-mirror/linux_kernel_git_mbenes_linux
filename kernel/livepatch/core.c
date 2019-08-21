@@ -245,8 +245,11 @@ static int klp_resolve_symbols(Elf_Shdr *relasec, struct module *pmod)
 	return 0;
 }
 
-static int klp_write_object_relocations(struct module *pmod,
-					struct klp_object *obj)
+typedef int (reloc_update_fn_t)(struct module *, unsigned int);
+
+static int klp_update_object_relocations(struct module *pmod,
+					 struct klp_object *obj,
+					 reloc_update_fn_t reloc_update_fn)
 {
 	int i, cnt, ret = 0;
 	const char *objname, *secname;
@@ -281,57 +284,12 @@ static int klp_write_object_relocations(struct module *pmod,
 		if (strcmp(objname, sec_objname))
 			continue;
 
-		ret = klp_resolve_symbols(sec, pmod);
-		if (ret)
-			break;
-
-		ret = apply_relocate_add(pmod->klp_info->sechdrs,
-					 pmod->core_kallsyms.strtab,
-					 pmod->klp_info->symndx, i, pmod);
+		ret = reloc_update_fn(pmod, i);
 		if (ret)
 			break;
 	}
 
 	return ret;
-}
-
-static void klp_clear_object_relocations(struct module *pmod,
-					struct klp_object *obj)
-{
-	int i, cnt;
-	const char *objname, *secname;
-	char sec_objname[MODULE_NAME_LEN];
-	Elf_Shdr *sec;
-
-	objname = klp_is_module(obj) ? obj->name : "vmlinux";
-
-	/* For each klp relocation section */
-	for (i = 1; i < pmod->klp_info->hdr.e_shnum; i++) {
-		sec = pmod->klp_info->sechdrs + i;
-		secname = pmod->klp_info->secstrings + sec->sh_name;
-		if (!(sec->sh_flags & SHF_RELA_LIVEPATCH))
-			continue;
-
-		/*
-		 * Format: .klp.rela.sec_objname.section_name
-		 * See comment in klp_resolve_symbols() for an explanation
-		 * of the selected field width value.
-		 */
-		secname = pmod->klp_info->secstrings + sec->sh_name;
-		cnt = sscanf(secname, ".klp.rela.%55[^.]", sec_objname);
-		if (cnt != 1) {
-			pr_err("section %s has an incorrectly formatted name\n",
-			       secname);
-			continue;
-		}
-
-		if (strcmp(objname, sec_objname))
-			continue;
-
-		clear_relocate_add(pmod->klp_info->sechdrs,
-				   pmod->core_kallsyms.strtab,
-				   pmod->klp_info->symndx, i, pmod);
-	}
 }
 
 /*
@@ -751,6 +709,21 @@ void __weak arch_klp_init_object_loaded(struct klp_patch *patch,
 {
 }
 
+static int klp_write_relocations(struct module *pmod,
+				 unsigned int relsec)
+{
+	int ret;
+
+	ret = klp_resolve_symbols(pmod->klp_info->sechdrs + relsec, pmod);
+	if (ret)
+		return ret;
+
+	ret = apply_relocate_add(pmod->klp_info->sechdrs,
+				 pmod->core_kallsyms.strtab,
+				 pmod->klp_info->symndx, relsec, pmod);
+	return ret;
+}
+
 /* parts of the initialization that is done only when the object is loaded */
 static int klp_init_object_loaded(struct klp_patch *patch,
 				  struct klp_object *obj)
@@ -761,7 +734,8 @@ static int klp_init_object_loaded(struct klp_patch *patch,
 	mutex_lock(&text_mutex);
 
 	module_disable_ro(patch->mod);
-	ret = klp_write_object_relocations(patch->mod, obj);
+	ret = klp_update_object_relocations(patch->mod, obj,
+					    klp_write_relocations);
 	if (ret) {
 		module_enable_ro(patch->mod, true);
 		mutex_unlock(&text_mutex);
@@ -1111,6 +1085,15 @@ void klp_discard_nops(struct klp_patch *new_patch)
 	klp_free_objects_dynamic(klp_transition_patch);
 }
 
+static int klp_clear_relocations(struct module *pmod,
+				 unsigned int relsec)
+{
+	clear_relocate_add(pmod->klp_info->sechdrs,
+			   pmod->core_kallsyms.strtab,
+			   pmod->klp_info->symndx, relsec, pmod);
+	return 0;
+}
+
 /*
  * Remove parts of patches that touch a given kernel module. The list of
  * patches processed might be limited. When limit is NULL, all patches
@@ -1141,7 +1124,8 @@ static void klp_cleanup_module_patches_limited(struct module *mod,
 
 			mutex_lock(&text_mutex);
 			module_disable_ro(patch->mod);
-			klp_clear_object_relocations(patch->mod, obj);
+			klp_update_object_relocations(patch->mod, obj,
+						      klp_clear_relocations);
 			module_enable_ro(patch->mod, true);
 			mutex_unlock(&text_mutex);
 
